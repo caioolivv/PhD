@@ -1,4 +1,3 @@
-# %%
 import os
 import sys
 import gi
@@ -27,8 +26,7 @@ import matplotlib.pyplot as plt
 plt.rcParams['text.latex.preamble'] = [r'\usepackage{pxfonts, mathpazo}']
 plt.rc('text', usetex=True)
 
-# %%
-np.random.seed(0)
+# np.random.seed(0)
 # Define cosmological parameters
 cosmo = Cosmology(H0 = 70.0, Omega_dm0 = 0.27 - 0.045, Omega_b0 = 0.045, Omega_k0 = 0.0)
 
@@ -39,13 +37,14 @@ ngals         = 10000 # Number of galaxies
 Delta         = 200   # Overdensity parameter definition NFW profile
 cluster_ra    = 0.0   # Cluster right ascension
 cluster_dec   = 0.0   # Cluster declination
-shapenoise    = 0.01  # True ellipticity standard variation
-photoz_noise  = 0.01
+shapenoise    = 5e-2  # True ellipticity standard variation
+photoz_noise  = 5e-2
+ndata         = 10000
 
 # Create galaxy catalog and Cluster object
 
 def create_nc_data_cluster_wll (theta, g_t, z_source, z_cluster, cosmo, dist, sigma_z = None, sigma_g = None):
-    r  = clmm.convert_units (theta, "radians", "Mpc", redshift = z_cluster, cosmo = cosmo)
+    r = clmm.convert_units (theta, "radians", "Mpc", redshift = z_cluster, cosmo = cosmo)
     obs = Ncm.Matrix.new (len (theta), 3)
 
     for i in range (len (theta)):
@@ -53,26 +52,29 @@ def create_nc_data_cluster_wll (theta, g_t, z_source, z_cluster, cosmo, dist, si
         obs.set (i, 1, z_source[i])
         obs.set (i, 2, g_t[i])
 
-    gsdp  = Nc.GalaxySDPositionFlat ()
+    # gsdp  = Nc.GalaxySDPositionFlat ()
+    gsdp  = Nc.GalaxySDPositionSRDY1 ()
     gsdzp = Nc.GalaxySDZProxyGauss ()
     gsds  = Nc.GalaxySDShapeGauss ()
 
-    gsdp.set_z_lim (Ncm.Vector.new_array ([0.5-0.01, 7+0.01]))
-    gsdp.set_r_lim (Ncm.Vector.new_array ([min (r)-0.01, max (r)+0.01]))
-    gsdzp.set_z_lim (Ncm.Vector.new_array ([0.5-0.01, 7+0.01]))
+    gsdp.set_z_lim (Ncm.Vector.new_array ([0.3, 4.1]))
+    gsdp.set_r_lim (Ncm.Vector.new_array ([0.6, 3.2]))
+    gsdzp.set_z_lim (Ncm.Vector.new_array ([0.4, 4.2]))
     gsdzp.set_sigma (sigma_z)
     gsds.set_sigma (sigma_g)
 
     gwll = Nc.GalaxyWLLikelihood (s_dist=gsds, zp_dist=gsdzp, rz_dist=gsdp)
     gwll.set_obs (obs)
+    gwll.set_ndata (ndata)
+    gwll.set_cut (z_cluster + 0.1, 4.0, 0.75, 3.0)
 
     ga = Ncm.ObjArray.new ()
     ga.add (gwll)
 
-    dcwll = Nc.DataClusterWLL (galaxy_array = ga, z_cluster = z_cluster)
+    dcwll = Nc.DataClusterWLL (galaxy_array=ga, z_cluster=z_cluster)
     dcwll.set_init (True)
     
-    return dcwll
+    return dcwll, gwll
 
 def create_fit_obj (data_array, mset):
     dset = Ncm.Dataset.new ()
@@ -83,7 +85,6 @@ def create_fit_obj (data_array, mset):
 
     return fit
 
-# %%
 # np.random.seed(10)
 
 moo = clmm.Modeling (massdef='mean', delta_mdef=200, halo_profile_model='nfw')
@@ -101,47 +102,19 @@ data = mock.generate_galaxy_catalog (cluster_m, cluster_z, concentration, cosmo,
 gc = clmm.GalaxyCluster("CL_noisy_z", cluster_ra, cluster_dec, cluster_z, data)
 gc.compute_tangential_and_cross_components(geometry="flat")
 
-ggt = create_nc_data_cluster_wll (gc.galcat['theta'], gc.galcat['et'], gc.galcat['z'], cluster_z, cosmo, cosmo.dist, sigma_z=photoz_noise, sigma_g=shapenoise)
+ggt, gwll = create_nc_data_cluster_wll (gc.galcat['theta'], gc.galcat['et'], gc.galcat['z'], cluster_z, cosmo, cosmo.dist, sigma_z=photoz_noise, sigma_g=shapenoise)
 fit = create_fit_obj ([ggt], mset)
-fit.run (Ncm.FitRunMsgs.SIMPLE)
-fit.obs_fisher ()
-fit.log_info ()
-fit.log_covar ()
 
-print(10**mset.param_get(MDelta_pi.mid, MDelta_pi.pid))
+kde = gwll.peek_kde ()
+# dist = NCM_STATS_DIST (kde)
 
-Ncm.func_eval_set_max_threads (4)
-Ncm.func_eval_log_pool_stats ()
+r = np.linspace (0.6, 3.2, 1000)
+p = []
 
-init_sampler = Ncm.MSetTransKernGauss.new (0)
-init_sampler.set_mset (mset)
-init_sampler.set_prior_from_mset ()
-init_sampler.set_cov_from_rescale (1.0e-1)
+for i in range (1):
+    data = Ncm.Vector.new (3)
+    data.set (0, r[i])
+    data.set (1, 1.5)
+    data.set (2, 0.02)
 
-nwalkers = 200
-stretch = Ncm.FitESMCMCWalkerAPES.new (nwalkers, mset.fparams_len ())
-esmcmc  = Ncm.FitESMCMC.new (fit, nwalkers, init_sampler, stretch, Ncm.FitRunMsgs.SIMPLE)
-esmcmc.set_auto_trim_div (100)
-esmcmc.set_max_runs_time (2.0 * 60.0)
-esmcmc.set_nthreads(4)
-esmcmc.start_run()
-esmcmc.run(10000/nwalkers)
-esmcmc.end_run()
-
-mcat = esmcmc.peek_catalog()
-rows = np.array([mcat.peek_row(i).dup_array() for i in range(nwalkers * 10, mcat.len())])
-params = ["$" + mcat.col_symb(i) + "$" for i in range (mcat.ncols())]
-
-partial = ChainConsumer()
-partial.add_chain(rows[:,1:], parameters=params[1:], name=f"$\sigma_{{\epsilon^s}} = {shapenoise}$")
-partial.configure(spacing=0.0, usetex=True, colors='#D62728', shade=True, shade_alpha=0.2, bar_shade=True, smooth=True, kde=True, legend_color_text=False, linewidths=2)
-
-CC_fig = partial.plotter.plot(figsize=(8, 8), truth=[4, 15])
-
-fig = plt.figure(num=CC_fig, figsize=(8,8), dpi=300, facecolor="white")
-
-
-# %%
-
-
-
+    p.append (kde.eval (data))
