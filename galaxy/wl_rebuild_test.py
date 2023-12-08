@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import os
 import sys
 import gi
@@ -94,10 +95,10 @@ dset.append_data (dcwll)
 lh = Ncm.Likelihood.new (dset)
 fit = Ncm.Fit.factory (Ncm.FitType.NLOPT, "ln-neldermead", lh, mset, Ncm.FitGradType.NUMDIFF_FORWARD)
 
-fit.run (Ncm.FitRunMsgs.FULL)
-fit.obs_fisher ()
-fit.log_info ()
-fit.log_covar ()
+#fit.run (Ncm.FitRunMsgs.FULL)
+#fit.obs_fisher ()
+#fit.log_info ()
+#fit.log_covar ()
 
 Ncm.func_eval_set_max_threads (12)
 Ncm.func_eval_log_pool_stats ()
