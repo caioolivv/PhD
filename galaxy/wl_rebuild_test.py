@@ -45,28 +45,18 @@ dist.prepare(cosmo)
 
 smd = Nc.WLSurfaceMassDensity.new(dist)
 
-gsdp  = Nc.GalaxySDPositionSRDY1()
+gsdp  = Nc.GalaxySDPositionLSSTSRD.new(1e-6, 100, 1e-6, 4)
 gsdzp = Nc.GalaxySDZProxyGauss()
 gsds  = Nc.GalaxySDShapeGauss()
 
-gsdp.set_r_lim(Ncm.Vector.new_array([1e-6, 4]))
-gsdp.set_z_lim(Ncm.Vector.new_array([1e-6, 10]))
-gsdzp.set_z_lim(Ncm.Vector.new_array([1e-6, 10]))
+gsdzp.set_z_lim(1e-6, 100)
 gsdzp.set_sigma(sigma_z)
 gsds.set_sigma(sigma_g)
 
 gwll = Nc.GalaxyWLLikelihood(s_dist=gsds, zp_dist=gsdzp, rz_dist=gsdp)
 
-obs_matrix = Ncm.Matrix.new(ngals, 3)
+gwll.gen_obs(cosmo, dp, smd, cluster_z, ngals, rng)
 
-for i in range(ngals):
-    vec = gwll.gen(cosmo, dp, smd, cluster_z, rng)
-    for j in range(3):
-        obs_matrix.set(i, j, vec.get(j))
-    #     print(j, obs.get(j))
-    # print('')
-
-gwll.set_obs (obs_matrix)
 gwll.set_ndata (ndata)
 gwll.set_cut (3.0, 5.0)
 gwll.set_prec (10**(-prec))
@@ -95,10 +85,10 @@ dset.append_data (dcwll)
 lh = Ncm.Likelihood.new (dset)
 fit = Ncm.Fit.factory (Ncm.FitType.NLOPT, "ln-neldermead", lh, mset, Ncm.FitGradType.NUMDIFF_FORWARD)
 
-#fit.run (Ncm.FitRunMsgs.FULL)
-#fit.obs_fisher ()
-#fit.log_info ()
-#fit.log_covar ()
+fit.run (Ncm.FitRunMsgs.FULL)
+fit.obs_fisher ()
+fit.log_info ()
+fit.log_covar ()
 
 Ncm.func_eval_set_max_threads (12)
 Ncm.func_eval_log_pool_stats ()
